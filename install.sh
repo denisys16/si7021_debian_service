@@ -37,6 +37,7 @@ else
     mkdir $DIR
 fi
 
+cp -ar lib $DIR
 cp *.sh $DIR
 cp *.py $DIR
 chmod a+x $DIR/*.*

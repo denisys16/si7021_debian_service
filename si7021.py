@@ -1,14 +1,35 @@
 #!/usr/bin/env python
+# -*- coding: utf-8 -*-
 
 import logging
 import logging.handlers
 import argparse
 import sys
-import time  # this is only being used as part of the example
+import time
+import threading
+
+try:
+    import paho.mqtt.publish as publish
+except ImportError:
+    # This part is only required to run the example from within the examples
+    # directory when the module itself is not installed.
+    #
+    # If you have the module installed, just use "import paho.mqtt.publish"
+    import os
+    import inspect
+    cmd_subfolder = os.path.realpath(os.path.abspath(os.path.join(os.path.split(inspect.getfile( inspect.currentframe() ))[0],"./lib")))
+    if cmd_subfolder not in sys.path:
+        sys.path.insert(0, cmd_subfolder)
+    import paho.mqtt.publish as publish
+
+MQTT_SERVER="192.168.1.108"
+MQTT_SERVER_PORT=1883
+MQTT_PUBLISH_PERIOD=5
+MQTT_CLIENT_ID="opimonitormqtt002"
 
 # Deafults
 LOG_FILENAME = "/tmp/si7021.log"
-LOG_LEVEL = logging.INFO  # Could be e.g. "DEBUG" or "WARNING"
+LOG_LEVEL = logging.INFO  # Could be e.g. DEBUG, INFO, WARNING, ERROR or CRITICAL
 
 # Define and parse command line arguments
 parser = argparse.ArgumentParser(description="Si7021 service")
@@ -50,13 +71,48 @@ sys.stdout = MyLogger(logger, logging.INFO)
 # Replace stderr with logging to file at ERROR level
 sys.stderr = MyLogger(logger, logging.ERROR)
 
-i = 0
+def get_time():
+    return time.strftime("%d %b %Y %H:%M:%S", time.localtime())
 
-# Loop forever, doing something useful hopefully:
-while True:
-    logger.info("The counter is now " + str(i))
-    print "This is a print"
-    i += 1
-    time.sleep(5)
-    if i == 3:
-        j = 1/0  # cause an exception to be thrown and the program to exit
+def get_cpu_temperature():
+    try:
+        with open('/sys/devices/virtual/hwmon/hwmon1/temp1_input', 'rb') as stream:
+            temp = stream.read().strip()
+            logger.info(get_time() + " CPU Temperature: " + temp + " °C")
+            return temp
+    except BaseException:
+        logger.warning(get_time() + " Error read CPU temperature.")
+        return "Error"
+
+def get_cpu_frequency():
+    try:
+        with open('/sys/devices/system/cpu/cpu0/cpufreq/scaling_cur_freq', 'rb') as stream:
+            freq = int(stream.read().strip()) / 1000
+            logger.info(get_time() + " CPU Frequency: " + freq + " MHz")
+            return freq
+    except BaseException:
+        logger.warning(get_time() + " Error read CPU frequency.")
+        return "Error"
+
+logger.info("Service si7021 has started " + get_time())
+
+def main_loop():
+    cur_time = get_time()
+    cur_temperature = get_cpu_temperature()
+    cur_freq = get_cpu_frequency()
+
+    msg_time = ("state/opi/time", cur_time, 0, False)
+    msg_temperature = ("state/opi/temperature", cur_temperature, 0, False)
+    msg_freq = ("state/opi/freq", cur_freq, 0, False)
+    msgs = [msg_time, msg_temperature, msg_freq]
+    try:
+        publish.multiple(msgs, hostname=MQTT_SERVER, port=MQTT_SERVER_PORT, client_id=MQTT_CLIENT_ID)
+    except BaseException:
+        logger.warning(get_time() + " MQTT Publish error.")
+
+    threading.Timer(MQTT_PUBLISH_PERIOD, main_loop).start()
+
+if __name__ == "__main__":
+    main_loop()
+
+
