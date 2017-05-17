@@ -7,6 +7,8 @@ import argparse
 import sys
 import time
 import threading
+import smbus
+
 
 try:
     import paho.mqtt.publish as publish
@@ -88,11 +90,54 @@ def get_cpu_frequency():
     try:
         with open('/sys/devices/system/cpu/cpu0/cpufreq/scaling_cur_freq', 'rb') as stream:
             freq = int(stream.read().strip()) / 1000
-            logger.info(get_time() + " CPU Frequency: " + freq + " MHz")
+            logger.info(get_time() + " CPU Frequency: " + str(freq) + " MHz")
             return freq
     except BaseException:
         logger.warning(get_time() + " Error read CPU frequency.")
         return "Error"
+
+def get_si7021_data():
+    try:
+	# Get I2C bus (Номер шины в разных МК может отличаться. В PI3 - 1)
+	bus = smbus.SMBus(0)
+
+	# SI7021 address, 0x40(64)
+	# 0xF5(245)	Select Relative Humidity NO HOLD master mode
+	bus.write_byte(0x40, 0xF5)
+
+	time.sleep(0.3)
+
+	# SI7021 address, 0x40(64)
+	# Read data back, 2 bytes, Humidity MSB first
+	data0 = bus.read_byte(0x40)
+	data1 = bus.read_byte(0x40)
+
+	# Convert the data
+	Humidity = ((data0 * 256 + data1) * 125 / 65536.0) - 6
+
+	time.sleep(0.3)
+
+	# SI7021 address, 0x40(64)
+	#		0xF3(243)	Select temperature NO HOLD master mode
+	bus.write_byte(0x40, 0xF3)
+
+	time.sleep(0.3)
+
+	# SI7021 address, 0x40(64)
+	# Read data back, 2 bytes, Temperature MSB first
+	data0 = bus.read_byte(0x40)
+	data1 = bus.read_byte(0x40)
+
+	# Convert the data
+	cTemp = ((data0 * 256 + data1) * 175.72 / 65536.0) - 46.85
+
+	logger.info(get_time() + " Environment Temperature: " + ("%.2f" % cTemp) + " °C")
+	logger.info(get_time() + " Environment Humidity: " + ("%.2f" % Humidity) + " %")
+	
+	return cTemp, Humidity
+    except BaseException:
+        logger.warning(get_time() + " Error read SI7021 data.")
+        return "Error", "Error"
 
 logger.info("Service si7021 has started " + get_time())
 
@@ -100,6 +145,7 @@ def main_loop():
     cur_time = get_time()
     cur_temperature = get_cpu_temperature()
     cur_freq = get_cpu_frequency()
+    env_temp, env_humidity = get_si7021_data()
 
     msg_time = ("state/opi/time", cur_time, 0, False)
     msg_temperature = ("state/opi/temperature", cur_temperature, 0, False)
