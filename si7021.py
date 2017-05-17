@@ -121,8 +121,8 @@ def main_loop():
     msg_cpu_frequency = ("state/opi/cpu_frequency", get_cpu_frequency(), 0, False)
 
     env_temperature, env_humidity = get_si7021_data()
-    msg_env_temperature = ("state/opi/env_temperature", env_temperature, 0, False)
-    msg_env_humidity = ("state/opi/env_humidity", env_humidity, 0, False)
+    msg_env_temperature = ("state/opi/env_temperature", ("%.2f" %env_temperature), 0, False)
+    msg_env_humidity = ("state/opi/env_humidity", ("%.2f" %env_humidity), 0, False)
 
     msgs = [msg_time, msg_cpu_temperature, msg_cpu_frequency, msg_env_temperature, msg_env_humidity]
 
